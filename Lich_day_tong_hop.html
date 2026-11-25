@@ -184,7 +184,13 @@ const HOLIDAYS = {
   "2027-02-08":"Mùng 3 Tết","2027-02-09":"Mùng 4 Tết","2027-02-10":"Mùng 5 Tết",
 };
 // Ngày giáo viên cho cả lớp nghỉ: buổi học tự lùi sang buổi kế tiếp
-const OFF_DAYS = {"2026-11-20":"Nghỉ học","2026-11-21":"Nghỉ học"};
+const OFF_DAYS = {"2026-11-20":"Nghỉ học","2026-11-21":"Nghỉ học","2027-01-01":"Tết Dương lịch"};
+// Nghỉ Tết Nguyên đán: từ 26 tháng Chạp (02/02/2027) đến hết mùng 6 (11/02/2027), học lại mùng 7 (12/02)
+(()=>{const T=["26 Chạp","27 Chạp","28 Chạp","29 Chạp","Mùng 1 Tết","Mùng 2 Tết","Mùng 3 Tết","Mùng 4 Tết","Mùng 5 Tết","Mùng 6 Tết"];
+  T.forEach((t,i)=>{const d=new Date(2027,1,2+i); OFF_DAYS[`2027-02-${String(2+i).padStart(2,"0")}`]="Nghỉ Tết · "+t;});})();
+// Ngày chỉ một số trình độ nghỉ (các lớp khác vẫn học)
+const OFF_LEVEL = {"2026-11-24":["HSK2"]};
+const isOff=(key,lv)=>!!OFF_DAYS[key]||!!(OFF_LEVEL[key]&&OFF_LEVEL[key].includes(lv));
 const BIG_HOL = new Set(["2027-01-01","2027-02-05","2027-02-06","2027-02-07","2027-02-08","2027-02-09","2027-02-10"]);
 
 /* ===== LỘ TRÌNH CÁC KHÓA ===== */
@@ -363,7 +369,7 @@ const BY_DATE={};        // "yyyy-mm-dd" -> [{cls,n,...}]
 for(const [cls,c] of Object.entries(COURSES)){
   const arr=[]; let d=parse(c.start), n=0;
   while(n<c.total){
-    if(c.days.includes(d.getDay()) && !OFF_DAYS[iso(d)]){
+    if(c.days.includes(d.getDay()) && !isOff(iso(d),c.lv)){
       n++; const [bai,ct]=CURRICULA[c.lv](n); const key=iso(d);
       const s={cls,n,date:new Date(d),key,bai,ct,time:c.time,end:c.end,hol:HOLIDAYS[key]||""};
       arr.push(s); (BY_DATE[key]=BY_DATE[key]||[]).push(s);
@@ -430,6 +436,7 @@ function eventsOn(d){
   const key=iso(d), out=[];
   for(const w of WEEKLY){
     if(w.day!==d.getDay()||HIDDEN.has(w.lv)||!activeOn(w,d)||OFF_DAYS[key]) continue;
+    if(isOff(key,w.lv)){ out.push({...w,label:`<b>${w.time} ${w.name}</b> · Nghỉ`,done:true}); continue; }
     const c=COURSES[w.name];
     if(c){
       const s=(BY_DATE[key]||[]).find(s=>s.cls===w.name);
@@ -448,7 +455,7 @@ function renderMonth(){
   for(let i=0;i<42;i++){
     const d=new Date(start); d.setDate(start.getDate()+i);
     if(i>=35 && d.getMonth()!==m) break;
-    const key=iso(d), hol=OFF_DAYS[key]||HOLIDAYS[key];
+    const key=iso(d), hol=OFF_DAYS[key]||(OFF_LEVEL[key]?OFF_LEVEL[key].join(', ')+' nghỉ':'')||HOLIDAYS[key];
     html+=`<div class="cell ${d.getMonth()!==m?"out":""} ${+d===+TODAY?"istoday":""} ${OFF_DAYS[key]?"off":""}">
       <div class="d"><span class="dd">${pad(d.getDate())}/${pad(d.getMonth()+1)}<small class="al">${(()=>{const l=LUNAR(d.getDate(),d.getMonth()+1,d.getFullYear());return `ÂL ${l.d===1?l.d+"/"+l.m+(l.leap?"n":""):l.d}`})()}</small></span>${hol?`<span class="hol">${hol}</span>`:""}</div>
       ${OFF_DAYS[key]?`<div class="offtag">🌸 Cả lớp nghỉ</div>`:""}${eventsOn(d).map(e=>`<div class="ev lv-${e.lv} ${e.done?"done":""}">${e.label}</div>`).join("")}
@@ -521,7 +528,7 @@ function buildIcs(){
     const ds=iso(d).replace(/-/g,""), t=w.time.replace(":","")+"00";
     L.push("BEGIN:VEVENT",`UID:weekly-${i}-${w.name.replace(/\s/g,"")}@lichday`,`DTSTAMP:${stamp}`,
       `DTSTART;TZID=Asia/Ho_Chi_Minh:${ds}T${t}`,`DTEND;TZID=Asia/Ho_Chi_Minh:${ds}T${addMin(w.time,90)}`,
-      `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[w.day]}`+(w.until?`;UNTIL=${w.until.replace(/-/g,"")}T165959Z`:""),...Object.keys(OFF_DAYS).filter(k=>parse(k).getDay()===w.day).map(k=>`EXDATE;TZID=Asia/Ho_Chi_Minh:${k.replace(/-/g,"")}T${t}`),"SUMMARY:"+icsEsc(`${w.name} (${LV_LABEL[w.lv]})`),
+      `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[w.day]}`+(w.until?`;UNTIL=${w.until.replace(/-/g,"")}T165959Z`:""),...Object.keys(OFF_DAYS).concat(Object.keys(OFF_LEVEL).filter(k=>OFF_LEVEL[k].includes(w.lv))).filter(k=>parse(k).getDay()===w.day).map(k=>`EXDATE;TZID=Asia/Ho_Chi_Minh:${k.replace(/-/g,"")}T${t}`),"SUMMARY:"+icsEsc(`${w.name} (${LV_LABEL[w.lv]})`),
       "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:Sắp đến giờ dạy","TRIGGER:-PT30M","END:VALARM","END:VEVENT");
   });
   // các buổi theo lộ trình
